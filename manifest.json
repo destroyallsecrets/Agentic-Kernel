@@ -1,0 +1,16 @@
+{
+  "name": "Agentic Kernel",
+  "short_name": "AgentKernel",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "https://cdn.jsdelivr.net/npm/lucide-static@0.469.0/icons/cpu.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

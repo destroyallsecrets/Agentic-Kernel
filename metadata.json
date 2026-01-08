@@ -1,0 +1,5 @@
+{
+  "name": "Agentic Kernel",
+  "description": "A responsive Master Agent orchestration platform that manages a fleet of AI workers. Features adaptive UI for mobile and desktop, real-time thought chains, and Gemini-powered task delegation.",
+  "requestFramePermissions": []
+}

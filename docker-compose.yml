@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # The central GUI and API that manages the agents (Master Agent)
+  orchestrator:
+    build: 
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspaces:/app/shared_workspaces
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - redis
+
+  # Scalable Worker Agents (Gemini CLI instances)
+  agent-worker:
+    build: 
+      context: .
+      dockerfile: Dockerfile.worker
+    deploy:
+      replicas: 3 # Start with 3 distinct agents
+    volumes:
+      - ./workspaces:/app/shared_workspaces
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - REDIS_HOST=redis
+    command: python agent_listener.py
+    depends_on:
+      - redis
+
+  # State Store (The Nervous System)
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
