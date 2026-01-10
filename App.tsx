@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Command, LayoutGrid, Terminal as TerminalIcon, ShieldAlert, Cpu, Zap, Activity } from 'lucide-react';
+import { Command, LayoutGrid, Terminal as TerminalIcon, ShieldAlert, Cpu, Zap, FolderCode, Search, Download, X } from 'lucide-react';
 import { useAgentSystem } from './hooks/useAgentSystem';
 import { AgentCard } from './components/AgentCard';
 import { Terminal } from './components/Terminal';
-import { AgentStatus, WorkerAgent } from './types';
+import { ArtifactExplorer } from './components/ArtifactExplorer';
+import { AgentNetworkGraph } from './components/AgentNetworkGraph';
+import { AgentStatus } from './types';
 import { Tab, TabGroup, TabList, TabPanel, TabPanels, Transition } from '@headlessui/react';
 
 // Utility for screen size detection
@@ -23,11 +25,33 @@ const App: React.FC = () => {
   const isDesktop = useMediaQuery('(min-width: 1024px)');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [commandValue, setCommandValue] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   
-  const { agents, globalLogs, isOrchestrating, handleCommand, killAllAgents } = useAgentSystem();
+  const { 
+    agents, 
+    globalLogs, 
+    artifacts, 
+    isOrchestrating, 
+    handleCommand, 
+    killAllAgents, 
+    broadcastEvent,
+    latestArtifact,
+    clearLatestArtifact 
+  } = useAgentSystem();
 
   const activeAgents = agents.filter(a => a.status !== AgentStatus.KILLED);
+  
+  // Filtering Logic
+  const filteredAgents = activeAgents.filter(agent => {
+    const query = searchQuery.toLowerCase();
+    return (
+      agent.name.toLowerCase().includes(query) ||
+      agent.role.toLowerCase().includes(query) ||
+      agent.status.toLowerCase().includes(query)
+    );
+  });
+
   const selectedAgent = agents.find(a => a.id === selectedAgentId) || null;
   const displayedLogs = selectedAgent ? selectedAgent.logs : globalLogs;
 
@@ -49,9 +73,61 @@ const App: React.FC = () => {
     setCommandValue('');
   };
 
+  const downloadFile = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex h-screen w-screen bg-gray-950 text-gray-200 overflow-hidden font-sans">
       
+      {/* Toast Notification for Artifacts */}
+      <Transition
+        show={!!latestArtifact}
+        enter="transition-opacity duration-300"
+        enterFrom="opacity-0 translate-y-2"
+        enterTo="opacity-100 translate-y-0"
+        leave="transition-opacity duration-150"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+        className="fixed bottom-4 right-4 z-50"
+      >
+         <div className="bg-gray-900 border border-primary-500/50 rounded-lg shadow-xl p-4 flex items-center gap-4 max-w-sm">
+            <div className="p-2 bg-gray-800 rounded-full">
+               <FolderCode size={20} className="text-primary-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+               <h4 className="text-sm font-semibold text-white">New Artifact Generated</h4>
+               <p className="text-xs text-gray-400 truncate">{latestArtifact?.path}</p>
+            </div>
+            <div className="flex gap-2">
+               <button 
+                 onClick={() => {
+                    if (latestArtifact) downloadFile(latestArtifact.path.split('/').pop() || 'download', latestArtifact.content);
+                    clearLatestArtifact();
+                 }}
+                 className="p-2 hover:bg-primary-600/20 text-primary-400 rounded transition-colors"
+                 title="Download"
+               >
+                 <Download size={18} />
+               </button>
+               <button 
+                 onClick={clearLatestArtifact}
+                 className="p-2 hover:bg-gray-800 text-gray-500 rounded transition-colors"
+               >
+                 <X size={18} />
+               </button>
+            </div>
+         </div>
+      </Transition>
+
       <TabGroup className="flex flex-col lg:flex-row w-full h-full">
         
         {/* DESKTOP SIDEBAR / MOBILE BOTTOM NAV (TabList) */}
@@ -76,6 +152,14 @@ const App: React.FC = () => {
               }`
             }>
               <TerminalIcon size={20} />
+            </Tab>
+
+            <Tab className={({ selected }) =>
+              `p-3 rounded-md transition-colors outline-none ${
+                selected ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
+              }`
+            }>
+              <FolderCode size={20} />
             </Tab>
 
             <div className="hidden lg:flex mt-auto pb-4">
@@ -113,7 +197,7 @@ const App: React.FC = () => {
                 type="text" 
                 value={commandValue}
                 onChange={(e) => setCommandValue(e.target.value)}
-                placeholder={isOrchestrating ? "Master Agent is thinking..." : "Enter system directive... (Ctrl+K)"}
+                placeholder={isOrchestrating ? "Master Agent is thinking..." : "Enter directive... e.g., 'Create a Snake game in HTML' (Ctrl+K)"}
                 disabled={isOrchestrating}
                 className="w-full bg-gray-900 border border-gray-850 text-sm rounded-md pl-9 pr-10 py-1.5 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all placeholder-gray-600 text-gray-200"
               />
@@ -140,23 +224,39 @@ const App: React.FC = () => {
             {/* AGENT DASHBOARD PANEL */}
             <TabPanel className="h-full flex flex-col lg:flex-row focus:outline-none">
                <div className="flex-1 overflow-y-auto p-4 lg:p-6 scroll-smooth">
-                 {/* Stats Row */}
-                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    <div className="p-4 bg-gray-900 border border-gray-850 rounded-md">
-                      <div className="text-gray-500 text-[10px] font-mono uppercase tracking-wider mb-1">Active Workers</div>
-                      <div className="text-xl font-mono text-white">{activeAgents.length}</div>
+                 
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    {/* Network Graph */}
+                    <div className="md:col-span-2">
+                        <AgentNetworkGraph agents={activeAgents} broadcastEvent={broadcastEvent} />
                     </div>
-                    <div className="p-4 bg-gray-900 border border-gray-850 rounded-md">
-                      <div className="text-gray-500 text-[10px] font-mono uppercase tracking-wider mb-1">Status</div>
-                      <div className="text-xl font-mono text-white">{isOrchestrating ? 'BUSY' : 'IDLE'}</div>
-                    </div>
-                    <div className="p-4 bg-gray-900 border border-gray-850 rounded-md">
-                      <div className="text-gray-500 text-[10px] font-mono uppercase tracking-wider mb-1">Memory</div>
-                      <div className="text-xl font-mono text-white">{activeAgents.reduce((acc, curr) => acc + curr.memoryUsage, 0)} MB</div>
-                    </div>
-                    <div className="p-4 bg-gray-900 border border-gray-850 rounded-md">
-                      <div className="text-gray-500 text-[10px] font-mono uppercase tracking-wider mb-1">Completed</div>
-                      <div className="text-xl font-mono text-white">{agents.filter(a => a.status === AgentStatus.COMPLETED).length}</div>
+
+                    {/* Stats & Search */}
+                    <div className="flex flex-col gap-3">
+                         <div className="p-4 bg-gray-900 border border-gray-850 rounded-lg flex-1 flex flex-col justify-center">
+                           <div className="text-gray-500 text-[10px] font-mono uppercase tracking-wider mb-2">Cluster Status</div>
+                           <div className="flex gap-4">
+                              <div>
+                                 <span className="text-2xl font-mono text-white block">{activeAgents.length}</span>
+                                 <span className="text-xs text-gray-500">Nodes</span>
+                              </div>
+                              <div>
+                                 <span className="text-2xl font-mono text-white block">{artifacts.length}</span>
+                                 <span className="text-xs text-gray-500">Artifacts</span>
+                              </div>
+                           </div>
+                         </div>
+                         
+                         <div className="relative">
+                            <Search size={14} className="absolute left-3 top-3 text-gray-500" />
+                            <input 
+                              type="text" 
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              placeholder="Filter agents..." 
+                              className="w-full bg-gray-900 border border-gray-850 rounded-lg pl-9 pr-3 py-2.5 text-xs focus:ring-1 focus:ring-primary-500 outline-none text-gray-200"
+                            />
+                         </div>
                     </div>
                  </div>
 
@@ -167,15 +267,15 @@ const App: React.FC = () => {
                     </div>
                  )}
 
-                 {/* Denser grid on large screens */}
+                 {/* Agent Grid */}
                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
-                    {agents.map(agent => (
+                    {filteredAgents.map(agent => (
                       <AgentCard 
                         key={agent.id} 
                         agent={agent} 
                         selected={selectedAgentId === agent.id}
                         onClick={() => setSelectedAgentId(selectedAgentId === agent.id ? null : agent.id)}
-                        compact={true} // Default to compact in grid for better density
+                        compact={true} 
                       />
                     ))}
                  </div>
@@ -206,12 +306,17 @@ const App: React.FC = () => {
                  className="h-full w-full absolute inset-0 bg-gray-950"
                >
                  <Terminal 
-                   logs={globalLogs} // Full logs in terminal view
+                   logs={globalLogs} 
                    isMobile={!isDesktop} 
                    isOpen={true} 
                    onClose={() => {}} 
                  />
                </Transition>
+            </TabPanel>
+
+            {/* ARTIFACT EXPLORER PANEL */}
+            <TabPanel className="h-full bg-gray-950 focus:outline-none relative">
+               <ArtifactExplorer artifacts={artifacts} />
             </TabPanel>
 
           </TabPanels>

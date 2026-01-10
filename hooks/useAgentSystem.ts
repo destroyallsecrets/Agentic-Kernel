@@ -1,21 +1,65 @@
-import { useState, useRef, useEffect } from 'react';
-import { WorkerAgent, AgentStatus, AgentLog } from '../types';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { WorkerAgent, AgentStatus, AgentLog, AgentArtifact, BroadcastEvent } from '../types';
 import { orchestratePlan, createAgentSession, stepAgent } from '../services/geminiService';
 import { Chat } from '@google/genai';
+
+const STORAGE_KEY = 'agentic_kernel_state';
 
 export const useAgentSystem = () => {
   const [agents, setAgents] = useState<WorkerAgent[]>([]);
   const [globalLogs, setGlobalLogs] = useState<AgentLog[]>([]);
+  const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [isOrchestrating, setIsOrchestrating] = useState(false);
+  const [broadcastEvent, setBroadcastEvent] = useState<BroadcastEvent | null>(null);
+  const [latestArtifact, setLatestArtifact] = useState<AgentArtifact | null>(null);
   
   // Store the real Gemini Chat sessions. Refs are perfect for non-serializable objects that don't trigger re-renders.
   const agentSessions = useRef<Map<string, Chat>>(new Map());
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const initialized = useRef(false);
   
   // Track which agent is currently executing to prevent race conditions
   const processingRef = useRef<boolean>(false);
 
-  const addLog = (message: string, type: AgentLog['type'] = 'info', agentId: string = 'MASTER') => {
+  // --------------------------------------------------------------------------
+  // PERSISTENCE & INITIALIZATION
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+
+    const savedState = localStorage.getItem(STORAGE_KEY);
+    if (savedState) {
+      try {
+        const parsed = JSON.parse(savedState);
+        if (parsed.agents) setAgents(parsed.agents);
+        if (parsed.globalLogs) setGlobalLogs(parsed.globalLogs);
+        if (parsed.artifacts) setArtifacts(parsed.artifacts);
+        
+        // Note: Chat sessions are re-created lazily in the scheduler loop
+        // or we could eagerly create them here if we wanted.
+        // For robustness, the scheduler handles missing sessions.
+        addLog('[SYSTEM] State restored from local storage.', 'info');
+      } catch (e) {
+        console.error("Failed to load state", e);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!initialized.current) return;
+    const state = {
+      agents,
+      globalLogs,
+      artifacts
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, [agents, globalLogs, artifacts]);
+
+  // --------------------------------------------------------------------------
+  // LOGGING
+  // --------------------------------------------------------------------------
+  const addLog = useCallback((message: string, type: AgentLog['type'] = 'info', agentId: string = 'MASTER') => {
     const newLog: AgentLog = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: Date.now(),
@@ -26,7 +70,7 @@ export const useAgentSystem = () => {
     setGlobalLogs(prev => {
       // Keep global log size manageable
       const next = [...prev, newLog];
-      return next.slice(-50); 
+      return next.slice(-100); 
     });
     
     if (agentId !== 'MASTER') {
@@ -37,9 +81,9 @@ export const useAgentSystem = () => {
         return a;
       }));
     }
-  };
+  }, []);
 
-  const spawnAgent = (name: string, role: string, task: string) => {
+  const spawnAgent = (name: string, role: string, task: string, dependencies: string[] = []) => {
     const id = Math.random().toString(36).substr(2, 9);
     
     // Initialize the real AI session
@@ -55,6 +99,7 @@ export const useAgentSystem = () => {
       currentTask: task,
       logs: [],
       memoryUsage: 20, // Baseline MB
+      dependencies
     };
 
     setAgents(prev => [...prev, newAgent]);
@@ -70,7 +115,31 @@ export const useAgentSystem = () => {
       progress: 0
     })));
     agentSessions.current.clear();
+    localStorage.removeItem(STORAGE_KEY);
     addLog('GLOBAL KILL-SWITCH ACTIVATED. All processes terminated.', 'error');
+  };
+
+  // Helper to parse artifacts from response
+  const parseArtifacts = (text: string, agentName: string): AgentArtifact[] => {
+    const regex = /<file path="([^"]+)">([\s\S]*?)<\/file>/g;
+    const found: AgentArtifact[] = [];
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      const path = match[1];
+      const content = match[2].trim();
+      const ext = path.split('.').pop() || 'txt';
+      
+      found.push({
+        id: Math.random().toString(36).substr(2, 9),
+        path,
+        content,
+        language: ext,
+        createdBy: agentName,
+        lastModified: Date.now()
+      });
+    }
+    return found;
   };
 
   // --------------------------------------------------------------------------
@@ -83,8 +152,6 @@ export const useAgentSystem = () => {
       // Find an agent that needs to work
       const activeAgents = agents.filter(a => a.status === AgentStatus.WORKING || a.status === AgentStatus.IDLE);
       
-      // If we have active agents, pick one to advance
-      // In a real system, this would be a queue. Here we just pick the first 'WORKING' or kickstart 'IDLE'
       const targetAgent = activeAgents.find(a => a.status === AgentStatus.WORKING) || activeAgents.find(a => a.status === AgentStatus.IDLE);
 
       if (!targetAgent) return;
@@ -97,51 +164,82 @@ export const useAgentSystem = () => {
            setAgents(prev => prev.map(a => a.id === targetAgent.id ? { ...a, status: AgentStatus.WORKING } : a));
         }
 
-        const session = agentSessions.current.get(targetAgent.id);
+        // Lazy session hydration
+        let session = agentSessions.current.get(targetAgent.id);
         if (!session) {
-           // Should not happen, but recovery
-           setAgents(prev => prev.map(a => a.id === targetAgent.id ? { ...a, status: AgentStatus.ERROR } : a));
-           processingRef.current = false;
-           return;
+           // Re-initialize session if missing (e.g. after page reload)
+           session = createAgentSession(targetAgent.name, targetAgent.role, targetAgent.currentTask || 'Resume work');
+           agentSessions.current.set(targetAgent.id, session);
+           console.log(`[SYSTEM] Re-hydrated session for ${targetAgent.name}`);
         }
 
         // Get context from GLOBAL logs (the last 5 messages from OTHER agents)
-        // This implements the "Cross Communication Bus" / Handshake mechanism
-        // We prioritize explicit BROADCAST messages and Success states.
         const sharedContext = globalLogs
           .filter(l => {
              const isBroadcast = l.message.includes('BROADCAST:');
              const isSuccess = l.type === 'success';
-             // We include broadcasts, successes, and general thoughts for ambient context
-             return isBroadcast || isSuccess || l.type === 'thought';
+             const isArtifact = l.type === 'artifact';
+             return isBroadcast || isSuccess || isArtifact || l.type === 'thought';
           })
           .slice(-5)
           .map(l => l.message)
           .join(" | ");
 
-        // Set UI to THINKING
+        const existingFilePaths = artifacts.map(a => a.path);
+
         setAgents(prev => prev.map(a => a.id === targetAgent.id ? { ...a, status: AgentStatus.THINKING } : a));
 
-        // Call Gemini API
-        const responseText = await stepAgent(session, sharedContext, targetAgent.currentTask);
+        const responseText = await stepAgent(session, sharedContext, targetAgent.currentTask, existingFilePaths);
 
         // Analyze Response
-        const isComplete = responseText.includes("TASK_COMPLETE");
-        const cleanResponse = responseText.replace("TASK_COMPLETE", "").trim();
+        const newArtifacts = parseArtifacts(responseText, targetAgent.name);
+        
+        if (newArtifacts.length > 0) {
+          setArtifacts(prev => {
+            const updated = [...prev];
+            newArtifacts.forEach(newArt => {
+              const idx = updated.findIndex(a => a.path === newArt.path);
+              if (idx >= 0) updated[idx] = newArt; 
+              else updated.push(newArt);
+            });
+            return updated;
+          });
+          // Trigger prompt for the last generated artifact
+          setLatestArtifact(newArtifacts[newArtifacts.length - 1]);
+        }
+
+        let cleanResponse = responseText.replace(/<file path="[^"]+">[\s\S]*?<\/file>/g, "[GENERATED FILE]").trim();
+        const isComplete = cleanResponse.includes("TASK_COMPLETE");
+        cleanResponse = cleanResponse.replace("TASK_COMPLETE", "").trim();
         const isBroadcast = cleanResponse.startsWith("BROADCAST:");
 
-        // Update UI with Result
-        // Broadcasts are logged as 'info' to distinguish them in the terminal
-        addLog(cleanResponse, isBroadcast ? 'info' : 'thought', targetAgent.id);
+        // Update Broadcast Event for visualization
+        if (isBroadcast) {
+          setBroadcastEvent({
+            sourceId: targetAgent.id,
+            message: cleanResponse,
+            timestamp: Date.now()
+          });
+          // Auto-clear event after animation duration roughly
+          setTimeout(() => setBroadcastEvent(null), 3000);
+        }
+
+        if (newArtifacts.length > 0) {
+           addLog(`Generated ${newArtifacts.length} artifact(s): ${newArtifacts.map(a => a.path).join(', ')}`, 'artifact', targetAgent.id);
+        }
+        
+        if (cleanResponse) {
+          addLog(cleanResponse, isBroadcast ? 'info' : 'thought', targetAgent.id);
+        }
         
         setAgents(prev => prev.map(a => {
           if (a.id === targetAgent.id) {
-            const newProgress = Math.min(99, a.progress + 15); // Increment progress per turn
+            const newProgress = Math.min(99, a.progress + 15);
             return {
               ...a,
               status: isComplete ? AgentStatus.COMPLETED : AgentStatus.WORKING,
               progress: isComplete ? 100 : newProgress,
-              memoryUsage: a.memoryUsage + Math.floor(Math.random() * 5), // Simulate memory leak/growth
+              memoryUsage: a.memoryUsage + Math.floor(Math.random() * 5),
             };
           }
           return a;
@@ -156,17 +254,15 @@ export const useAgentSystem = () => {
         addLog(`Agent ${targetAgent.name} crashed.`, 'error');
         setAgents(prev => prev.map(a => a.id === targetAgent.id ? { ...a, status: AgentStatus.ERROR } : a));
       } finally {
-        // Add a small delay so we don't hit rate limits instantly and the UI can breathe
         setTimeout(() => {
             processingRef.current = false;
         }, 800);
       }
     };
 
-    const intervalId = setInterval(runScheduler, 100); // Check schedule often, but execution is gated by processingRef
+    const intervalId = setInterval(runScheduler, 100);
     return () => clearInterval(intervalId);
-  }, [agents, globalLogs]); // Re-run if agent list changes or logs update (for context)
-
+  }, [agents, globalLogs, artifacts, addLog]); 
 
   // --------------------------------------------------------------------------
   // MASTER COMMAND HANDLER
@@ -174,34 +270,43 @@ export const useAgentSystem = () => {
   const handleCommand = async (input: string) => {
     if (!input.trim()) return;
     
-    // Clear previous state if needed or just append? Let's clear for new mission.
+    // Reset state for new command
     if (agents.length > 0) {
-        // Optional: clear old agents
-        // setAgents([]);
-        // agentSessions.current.clear();
+       // We keep logs but might want to clear agents? 
+       // For this app, let's treat a new command as adding to the swarm or replacing?
+       // Let's replace for cleanliness based on prompt context implying "Orchestration".
+       setAgents([]);
+       setArtifacts([]);
+       agentSessions.current.clear();
+       localStorage.removeItem(STORAGE_KEY);
     }
 
     setIsOrchestrating(true);
     addLog(`[MASTER] Directive received: "${input}"`, 'info');
     
-    // Call Gemini Orchestrator
     const plan = await orchestratePlan(input);
     
     addLog(`[MASTER] Strategy formulated. Deploying ${plan.tasks.length} units.`, 'info');
     
     plan.tasks.forEach(task => {
-      spawnAgent(task.name, task.role, task.task);
+      spawnAgent(task.name, task.role, task.task, task.dependencies);
     });
 
     setIsOrchestrating(false);
   };
 
+  const clearLatestArtifact = () => setLatestArtifact(null);
+
   return {
     agents,
     globalLogs,
+    artifacts,
     isOrchestrating,
     handleCommand,
     killAllAgents,
-    logsEndRef
+    logsEndRef,
+    broadcastEvent,
+    latestArtifact,
+    clearLatestArtifact
   };
 };

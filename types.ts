@@ -1,3 +1,4 @@
+
 export enum AgentStatus {
   IDLE = 'IDLE',
   THINKING = 'THINKING',
@@ -10,8 +11,17 @@ export enum AgentStatus {
 export interface AgentLog {
   id: string;
   timestamp: number;
-  type: 'info' | 'error' | 'success' | 'thought';
+  type: 'info' | 'error' | 'success' | 'thought' | 'artifact';
   message: string;
+}
+
+export interface AgentArtifact {
+  id: string;
+  path: string;
+  content: string;
+  language: string;
+  createdBy: string;
+  lastModified: number;
 }
 
 export interface WorkerAgent {
@@ -23,6 +33,7 @@ export interface WorkerAgent {
   currentTask?: string;
   logs: AgentLog[];
   memoryUsage: number; // in MB
+  dependencies: string[]; // List of agent names this agent depends on
 }
 
 export interface OrchestratorState {
@@ -35,4 +46,10 @@ export interface OrchestratorState {
 export interface MasterCommand {
   type: 'SPAWN_AGENTS' | 'KILL_ALL' | 'UPDATE_AGENT';
   payload?: any;
+}
+
+export interface BroadcastEvent {
+  sourceId: string;
+  message: string;
+  timestamp: number;
 }
