@@ -11,7 +11,6 @@ export const useAgentSystem = () => {
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([]);
   const [isOrchestrating, setIsOrchestrating] = useState(false);
   const [broadcastEvent, setBroadcastEvent] = useState<BroadcastEvent | null>(null);
-  const [latestArtifact, setLatestArtifact] = useState<AgentArtifact | null>(null);
   
   // Store the real Gemini Chat sessions. Refs are perfect for non-serializable objects that don't trigger re-renders.
   const agentSessions = useRef<Map<string, Chat>>(new Map());
@@ -142,6 +141,12 @@ export const useAgentSystem = () => {
     return found;
   };
 
+  const updateArtifact = (id: string, content: string) => {
+    setArtifacts(prev => prev.map(a => 
+      a.id === id ? { ...a, content, lastModified: Date.now() } : a
+    ));
+  };
+
   // --------------------------------------------------------------------------
   // THE REAL AGENT LOOP (Round Robin Scheduler)
   // --------------------------------------------------------------------------
@@ -204,8 +209,6 @@ export const useAgentSystem = () => {
             });
             return updated;
           });
-          // Trigger prompt for the last generated artifact
-          setLatestArtifact(newArtifacts[newArtifacts.length - 1]);
         }
 
         let cleanResponse = responseText.replace(/<file path="[^"]+">[\s\S]*?<\/file>/g, "[GENERATED FILE]").trim();
@@ -272,9 +275,6 @@ export const useAgentSystem = () => {
     
     // Reset state for new command
     if (agents.length > 0) {
-       // We keep logs but might want to clear agents? 
-       // For this app, let's treat a new command as adding to the swarm or replacing?
-       // Let's replace for cleanliness based on prompt context implying "Orchestration".
        setAgents([]);
        setArtifacts([]);
        agentSessions.current.clear();
@@ -295,8 +295,6 @@ export const useAgentSystem = () => {
     setIsOrchestrating(false);
   };
 
-  const clearLatestArtifact = () => setLatestArtifact(null);
-
   return {
     agents,
     globalLogs,
@@ -306,7 +304,6 @@ export const useAgentSystem = () => {
     killAllAgents,
     logsEndRef,
     broadcastEvent,
-    latestArtifact,
-    clearLatestArtifact
+    updateArtifact
   };
 };

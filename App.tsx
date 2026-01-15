@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Command, LayoutGrid, Terminal as TerminalIcon, ShieldAlert, Cpu, Zap, FolderCode, Search, Download, X } from 'lucide-react';
+import { Command, LayoutGrid, Terminal as TerminalIcon, ShieldAlert, Cpu, Zap, FolderCode, Search } from 'lucide-react';
 import { useAgentSystem } from './hooks/useAgentSystem';
 import { AgentCard } from './components/AgentCard';
 import { Terminal } from './components/Terminal';
 import { ArtifactExplorer } from './components/ArtifactExplorer';
 import { AgentNetworkGraph } from './components/AgentNetworkGraph';
 import { AgentStatus } from './types';
-import { Tab, TabGroup, TabList, TabPanel, TabPanels, Transition } from '@headlessui/react';
+import { Tab, TabGroup, TabList, TabPanel, TabPanels } from '@headlessui/react';
 
 // Utility for screen size detection
 const useMediaQuery = (query: string) => {
@@ -36,8 +36,7 @@ const App: React.FC = () => {
     handleCommand, 
     killAllAgents, 
     broadcastEvent,
-    latestArtifact,
-    clearLatestArtifact 
+    updateArtifact
   } = useAgentSystem();
 
   const activeAgents = agents.filter(a => a.status !== AgentStatus.KILLED);
@@ -73,61 +72,9 @@ const App: React.FC = () => {
     setCommandValue('');
   };
 
-  const downloadFile = (filename: string, content: string) => {
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="flex h-screen w-screen bg-gray-950 text-gray-200 overflow-hidden font-sans">
       
-      {/* Toast Notification for Artifacts */}
-      <Transition
-        show={!!latestArtifact}
-        enter="transition-opacity duration-300"
-        enterFrom="opacity-0 translate-y-2"
-        enterTo="opacity-100 translate-y-0"
-        leave="transition-opacity duration-150"
-        leaveFrom="opacity-100"
-        leaveTo="opacity-0"
-        className="fixed bottom-4 right-4 z-50"
-      >
-         <div className="bg-gray-900 border border-primary-500/50 rounded-lg shadow-xl p-4 flex items-center gap-4 max-w-sm">
-            <div className="p-2 bg-gray-800 rounded-full">
-               <FolderCode size={20} className="text-primary-400" />
-            </div>
-            <div className="flex-1 min-w-0">
-               <h4 className="text-sm font-semibold text-white">New Artifact Generated</h4>
-               <p className="text-xs text-gray-400 truncate">{latestArtifact?.path}</p>
-            </div>
-            <div className="flex gap-2">
-               <button 
-                 onClick={() => {
-                    if (latestArtifact) downloadFile(latestArtifact.path.split('/').pop() || 'download', latestArtifact.content);
-                    clearLatestArtifact();
-                 }}
-                 className="p-2 hover:bg-primary-600/20 text-primary-400 rounded transition-colors"
-                 title="Download"
-               >
-                 <Download size={18} />
-               </button>
-               <button 
-                 onClick={clearLatestArtifact}
-                 className="p-2 hover:bg-gray-800 text-gray-500 rounded transition-colors"
-               >
-                 <X size={18} />
-               </button>
-            </div>
-         </div>
-      </Transition>
-
       <TabGroup className="flex flex-col lg:flex-row w-full h-full">
         
         {/* DESKTOP SIDEBAR / MOBILE BOTTOM NAV (TabList) */}
@@ -294,29 +241,17 @@ const App: React.FC = () => {
 
             {/* FULL TERMINAL PANEL (Mobile/Focus) */}
             <TabPanel className="h-full bg-gray-950 focus:outline-none relative">
-               <Transition
-                 appear={true}
-                 show={true}
-                 enter="transition ease-out duration-300 transform"
-                 enterFrom="translate-y-full opacity-50"
-                 enterTo="translate-y-0 opacity-100"
-                 leave="transition ease-in duration-200 transform"
-                 leaveFrom="translate-y-0 opacity-100"
-                 leaveTo="translate-y-full opacity-0"
-                 className="h-full w-full absolute inset-0 bg-gray-950"
-               >
-                 <Terminal 
-                   logs={globalLogs} 
-                   isMobile={!isDesktop} 
-                   isOpen={true} 
-                   onClose={() => {}} 
-                 />
-               </Transition>
+                <Terminal 
+                  logs={globalLogs} 
+                  isMobile={!isDesktop} 
+                  isOpen={true} 
+                  onClose={() => {}} 
+                />
             </TabPanel>
 
             {/* ARTIFACT EXPLORER PANEL */}
             <TabPanel className="h-full bg-gray-950 focus:outline-none relative">
-               <ArtifactExplorer artifacts={artifacts} />
+               <ArtifactExplorer artifacts={artifacts} onUpdateArtifact={updateArtifact} />
             </TabPanel>
 
           </TabPanels>

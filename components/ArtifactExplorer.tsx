@@ -1,13 +1,14 @@
 
 import React, { useState } from 'react';
 import { AgentArtifact } from '../types';
-import { FileCode, FileText, FileJson, Copy, Check } from 'lucide-react';
+import { FileCode, FileText, FileJson, Copy, Check, Download } from 'lucide-react';
 
 interface ArtifactExplorerProps {
   artifacts: AgentArtifact[];
+  onUpdateArtifact: (id: string, content: string) => void;
 }
 
-export const ArtifactExplorer: React.FC<ArtifactExplorerProps> = ({ artifacts }) => {
+export const ArtifactExplorer: React.FC<ArtifactExplorerProps> = ({ artifacts, onUpdateArtifact }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -25,6 +26,19 @@ export const ArtifactExplorer: React.FC<ArtifactExplorerProps> = ({ artifacts })
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const downloadFile = () => {
+    if (!selectedArtifact) return;
+    const blob = new Blob([selectedArtifact.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = selectedArtifact.path.split('/').pop() || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   if (artifacts.length === 0) {
@@ -65,29 +79,40 @@ export const ArtifactExplorer: React.FC<ArtifactExplorerProps> = ({ artifacts })
         </div>
       </div>
 
-      {/* Content Preview */}
+      {/* Content Editor */}
       <div className="flex-1 flex flex-col min-w-0 bg-gray-950">
         {selectedArtifact && (
           <>
             <div className="h-10 border-b border-gray-850 flex items-center justify-between px-4 bg-gray-900">
               <span className="text-xs text-gray-400">{selectedArtifact.path}</span>
-              <div className="flex items-center gap-3">
-                 <span className="text-[10px] text-gray-600">
-                    By {selectedArtifact.createdBy} • {new Date(selectedArtifact.lastModified).toLocaleTimeString()}
+              
+              <div className="flex items-center gap-2">
+                 <span className="text-[10px] text-gray-600 mr-2">
+                    {new Date(selectedArtifact.lastModified).toLocaleTimeString()}
                  </span>
                  <button 
+                  onClick={downloadFile}
+                  className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-500 hover:text-primary-400"
+                  title="Download"
+                 >
+                   <Download size={14} />
+                 </button>
+                 <button 
                   onClick={copyToClipboard}
-                  className="p-1 hover:bg-gray-800 rounded transition-colors text-gray-500 hover:text-white"
+                  className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-500 hover:text-white"
                   title="Copy content"
                 >
                   {copied ? <Check size={14} className="text-accent-emerald" /> : <Copy size={14} />}
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              <pre className="text-xs leading-relaxed text-gray-300 font-mono whitespace-pre-wrap">
-                {selectedArtifact.content}
-              </pre>
+            <div className="flex-1 overflow-hidden relative">
+              <textarea
+                value={selectedArtifact.content}
+                onChange={(e) => onUpdateArtifact(selectedArtifact.id, e.target.value)}
+                className="w-full h-full p-4 bg-transparent text-gray-300 font-mono text-xs leading-relaxed outline-none resize-none focus:bg-gray-900/20 transition-colors"
+                spellCheck={false}
+              />
             </div>
           </>
         )}
