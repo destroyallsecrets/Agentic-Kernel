@@ -5,7 +5,8 @@ export enum AgentStatus {
   WORKING = 'WORKING',
   COMPLETED = 'COMPLETED',
   ERROR = 'ERROR',
-  KILLED = 'KILLED'
+  KILLED = 'KILLED',
+  AWAITING_MASTER_REVIEW = 'AWAITING_MASTER_REVIEW'
 }
 
 export interface AgentLog {
@@ -34,6 +35,8 @@ export interface WorkerAgent {
   logs: AgentLog[];
   memoryUsage: number; // in MB
   dependencies: string[]; // List of agent names this agent depends on
+  recoveryAttempts: number;
+  lastErrorMessage?: string;
 }
 
 export interface OrchestratorState {

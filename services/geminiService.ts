@@ -10,7 +10,7 @@ export const orchestratePlan = async (userPrompt: string): Promise<{ tasks: { ro
   try {
     const systemInstruction = `
       You are the "Master Agent" (Kernel) of a distributed AI system.
-      Your goal is to accept a high-level user request and break it down into atomic tasks for specialized "Worker Agents".
+      Your goal is to accept a high-level user request OR a failure report, and break it down into atomic tasks for specialized "Worker Agents".
       
       Return a JSON object with a single property "tasks" which is an array of objects.
       Each object must have:
@@ -112,9 +112,15 @@ export const stepAgent = async (chat: Chat, sharedContext: string, currentTask?:
       : `Begin your task: ${currentTask || 'Start working.'}`;
 
     const response = await chat.sendMessage({ message: prompt });
-    return response.text || "Thinking...";
-  } catch (err) {
+    
+    if (!response.text) {
+        throw new Error("Empty response received from LLM");
+    }
+    
+    return response.text;
+  } catch (err: any) {
     console.error("Agent Step Error", err);
-    return "ERROR: Connection interrupted.";
+    // Propagate the specific error message to the logic layer
+    throw new Error(err.message || "Connection interrupted");
   }
 };

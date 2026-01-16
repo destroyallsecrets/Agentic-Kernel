@@ -36,8 +36,6 @@ export const useAgentSystem = () => {
         if (parsed.artifacts) setArtifacts(parsed.artifacts);
         
         // Note: Chat sessions are re-created lazily in the scheduler loop
-        // or we could eagerly create them here if we wanted.
-        // For robustness, the scheduler handles missing sessions.
         addLog('[SYSTEM] State restored from local storage.', 'info');
       } catch (e) {
         console.error("Failed to load state", e);
@@ -83,6 +81,28 @@ export const useAgentSystem = () => {
   }, []);
 
   const spawnAgent = (name: string, role: string, task: string, dependencies: string[] = []) => {
+    // Check if agent already exists (for recovery/updates)
+    const existingAgent = agents.find(a => a.name === name);
+    
+    if (existingAgent) {
+        // Revive/Update existing agent
+        setAgents(prev => prev.map(a => a.id === existingAgent.id ? {
+            ...a,
+            status: AgentStatus.IDLE,
+            currentTask: task,
+            role: role,
+            dependencies: dependencies,
+            progress: 0
+        } : a));
+        
+        // Re-create session
+        const chatSession = createAgentSession(name, role, task);
+        agentSessions.current.set(existingAgent.id, chatSession);
+        
+        addLog(`[KERNEL] Updated protocols for ${name} (${role})`, 'info');
+        return existingAgent.id;
+    }
+
     const id = Math.random().toString(36).substr(2, 9);
     
     // Initialize the real AI session
@@ -98,7 +118,8 @@ export const useAgentSystem = () => {
       currentTask: task,
       logs: [],
       memoryUsage: 20, // Baseline MB
-      dependencies
+      dependencies,
+      recoveryAttempts: 0
     };
 
     setAgents(prev => [...prev, newAgent]);
@@ -148,6 +169,72 @@ export const useAgentSystem = () => {
   };
 
   // --------------------------------------------------------------------------
+  // SELF-HEALING & RECOVERY LOGIC
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    const checkRecoverableAgents = async () => {
+        // Find agents that are awaiting review and haven't exhausted attempts
+        const troubledAgent = agents.find(a => 
+            a.status === AgentStatus.AWAITING_MASTER_REVIEW && 
+            !isOrchestrating &&
+            a.recoveryAttempts < 3
+        );
+
+        if (troubledAgent) {
+            setIsOrchestrating(true);
+            const attempt = troubledAgent.recoveryAttempts + 1;
+            addLog(`[KERNEL] Failure detected in unit ${troubledAgent.name}. Initiating Recovery Protocol ${attempt}/3.`, 'error');
+
+            const recoveryPrompt = `
+                CRITICAL SYSTEM ALERT: Agent "${troubledAgent.name}" (${troubledAgent.role}) has failed.
+                
+                ERROR REPORT: ${troubledAgent.lastErrorMessage || "Unknown Runtime Error"}
+                CURRENT TASK: ${troubledAgent.currentTask}
+                
+                MISSION: Formulate a recovery plan. 
+                1. If the task was too complex, break it down or assign a "Debugger" agent.
+                2. If the agent is stuck, restart it with a simplified task.
+                3. Return a JSON task list to fix this specific situation.
+            `;
+
+            try {
+                // Ask Master Agent for a fix
+                const plan = await orchestratePlan(recoveryPrompt);
+                
+                // Apply fixes
+                plan.tasks.forEach(task => {
+                    spawnAgent(task.name, task.role, task.task, task.dependencies);
+                });
+
+                // Update the original agent's recovery counter
+                setAgents(prev => prev.map(a => a.id === troubledAgent.id ? {
+                    ...a,
+                    recoveryAttempts: attempt,
+                    // If the master didn't re-spawn it (name match), we might need to manually reset status?
+                    // spawnAgent handles re-spawning/updating existing names, so status resets there.
+                    // If the name CHANGED, this old agent stays in error unless we force it.
+                    // Let's assume Master keeps the name or spawns a helper.
+                    // If Master ignores it, we leave it in Review state to prevent loops.
+                } : a));
+
+            } catch (e) {
+                addLog(`[KERNEL] Recovery failed for ${troubledAgent.name}. Terminating unit.`, 'error');
+                setAgents(prev => prev.map(a => a.id === troubledAgent.id ? { ...a, status: AgentStatus.ERROR } : a));
+            } finally {
+                setIsOrchestrating(false);
+            }
+        } else if (agents.find(a => a.status === AgentStatus.AWAITING_MASTER_REVIEW && a.recoveryAttempts >= 3)) {
+             // Mark as dead if retries exhausted
+             setAgents(prev => prev.map(a => a.status === AgentStatus.AWAITING_MASTER_REVIEW ? { ...a, status: AgentStatus.ERROR, currentTask: 'Recovery Failed. Manual Intervention Required.' } : a));
+        }
+    };
+    
+    // Check periodically or when agents change
+    const timer = setTimeout(checkRecoverableAgents, 1000);
+    return () => clearTimeout(timer);
+  }, [agents, isOrchestrating, addLog]);
+
+  // --------------------------------------------------------------------------
   // THE REAL AGENT LOOP (Round Robin Scheduler)
   // --------------------------------------------------------------------------
   useEffect(() => {
@@ -172,7 +259,6 @@ export const useAgentSystem = () => {
         // Lazy session hydration
         let session = agentSessions.current.get(targetAgent.id);
         if (!session) {
-           // Re-initialize session if missing (e.g. after page reload)
            session = createAgentSession(targetAgent.name, targetAgent.role, targetAgent.currentTask || 'Resume work');
            agentSessions.current.set(targetAgent.id, session);
            console.log(`[SYSTEM] Re-hydrated session for ${targetAgent.name}`);
@@ -223,7 +309,6 @@ export const useAgentSystem = () => {
             message: cleanResponse,
             timestamp: Date.now()
           });
-          // Auto-clear event after animation duration roughly
           setTimeout(() => setBroadcastEvent(null), 3000);
         }
 
@@ -252,10 +337,17 @@ export const useAgentSystem = () => {
             addLog(`[${targetAgent.name}] Reporting completion.`, 'success');
         }
 
-      } catch (err) {
+      } catch (err: any) {
         console.error("Agent Cycle Error", err);
-        addLog(`Agent ${targetAgent.name} crashed.`, 'error');
-        setAgents(prev => prev.map(a => a.id === targetAgent.id ? { ...a, status: AgentStatus.ERROR } : a));
+        addLog(`Agent ${targetAgent.name} encountered error: ${err.message}`, 'error');
+        
+        // Transition to AWAITING_MASTER_REVIEW for self-healing instead of direct ERROR
+        setAgents(prev => prev.map(a => a.id === targetAgent.id ? { 
+            ...a, 
+            status: AgentStatus.AWAITING_MASTER_REVIEW,
+            lastErrorMessage: err.message
+        } : a));
+
       } finally {
         setTimeout(() => {
             processingRef.current = false;

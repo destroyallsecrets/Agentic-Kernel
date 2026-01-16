@@ -13,7 +13,8 @@ import {
   PenTool,
   Bug,
   Bot,
-  Code
+  Code,
+  Hourglass
 } from 'lucide-react';
 
 interface AgentCardProps {
@@ -31,6 +32,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, selected, onClick, 
       case AgentStatus.COMPLETED: return 'text-accent-emerald';
       case AgentStatus.ERROR:
       case AgentStatus.KILLED: return 'text-red-500';
+      case AgentStatus.AWAITING_MASTER_REVIEW: return 'text-yellow-500';
       default: return 'text-gray-500';
     }
   };
@@ -42,6 +44,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, selected, onClick, 
       case AgentStatus.COMPLETED: return <CheckCircle size={compact ? 12 : 14} />;
       case AgentStatus.ERROR:
       case AgentStatus.KILLED: return <AlertOctagon size={compact ? 12 : 14} />;
+      case AgentStatus.AWAITING_MASTER_REVIEW: return <Hourglass size={compact ? 12 : 14} className="animate-pulse" />;
       default: return <Circle size={compact ? 12 : 14} />;
     }
   };
@@ -97,7 +100,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, selected, onClick, 
           ${compact ? 'w-6 h-6' : 'px-2.5 py-1 gap-1.5'}
         `}>
           {getStatusIcon(agent.status)}
-          {!compact && <span className="text-[10px] font-mono font-bold">{agent.status}</span>}
+          {!compact && <span className="text-[10px] font-mono font-bold">{agent.status === AgentStatus.AWAITING_MASTER_REVIEW ? 'RECOVERY' : agent.status}</span>}
         </div>
       </div>
 
@@ -106,7 +109,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({ agent, selected, onClick, 
         {/* Progress Line */}
         <div className="w-full bg-gray-950 h-1.5 rounded-full overflow-hidden">
           <div 
-            className={`h-full transition-all duration-500 ${agent.status === AgentStatus.KILLED ? 'bg-red-900' : 'bg-gray-700 group-hover:bg-primary-600'}`}
+            className={`h-full transition-all duration-500 ${agent.status === AgentStatus.KILLED || agent.status === AgentStatus.ERROR ? 'bg-red-900' : (agent.status === AgentStatus.AWAITING_MASTER_REVIEW ? 'bg-yellow-600' : 'bg-gray-700 group-hover:bg-primary-600')}`}
             style={{ width: `${agent.progress}%` }}
           />
         </div>
