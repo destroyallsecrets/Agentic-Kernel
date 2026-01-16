@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Agentic Kernel</title>
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#09090b" />
@@ -41,8 +41,25 @@
       ::-webkit-scrollbar-track { background: #09090b; }
       ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }
       ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
-      body { background-color: #09090b; color: #e4e4e7; }
+      
+      :root {
+        --app-height: 100vh;
+      }
+
+      body { 
+        background-color: #09090b; 
+        color: #e4e4e7; 
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+      }
+      
       .border-subtle { border-color: #27272a; }
+      
+      /* Handle safe areas for mobile devices */
+      .safe-pb {
+        padding-bottom: env(safe-area-inset-bottom);
+      }
     </style>
   <script type="importmap">
 {
@@ -58,7 +75,8 @@
 }
 </script>
 </head>
-  <body class="antialiased overflow-hidden">
+  <body class="antialiased">
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

@@ -8,7 +8,6 @@ import { AgentNetworkGraph } from './components/AgentNetworkGraph';
 import { AgentStatus } from './types';
 import { Tab, TabGroup, TabList, TabPanel, TabPanels } from '@headlessui/react';
 
-// Utility for screen size detection
 const useMediaQuery = (query: string) => {
   const [matches, setMatches] = useState(false);
   useEffect(() => {
@@ -41,7 +40,6 @@ const App: React.FC = () => {
 
   const activeAgents = agents.filter(a => a.status !== AgentStatus.KILLED);
   
-  // Filtering Logic
   const filteredAgents = activeAgents.filter(agent => {
     const query = searchQuery.toLowerCase();
     return (
@@ -54,7 +52,6 @@ const App: React.FC = () => {
   const selectedAgent = agents.find(a => a.id === selectedAgentId) || null;
   const displayedLogs = selectedAgent ? selectedAgent.logs : globalLogs;
 
-  // Global Command Bar Shortcut (Ctrl+K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -73,64 +70,15 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-gray-950 text-gray-200 overflow-hidden font-sans">
+    <div className="flex flex-col lg:flex-row h-[100dvh] w-full bg-gray-950 text-gray-200 overflow-hidden font-sans">
       
-      <TabGroup className="flex flex-col lg:flex-row w-full h-full">
+      <TabGroup className="flex flex-col lg:flex-row w-full h-full overflow-hidden">
         
-        {/* DESKTOP SIDEBAR / MOBILE BOTTOM NAV (TabList) */}
-        <div className="order-2 lg:order-1 flex-shrink-0 z-20">
-          <TabList className="flex lg:flex-col h-[60px] lg:h-full w-full lg:w-16 bg-gray-900 border-t lg:border-t-0 lg:border-r border-gray-850 items-center justify-around lg:justify-start lg:py-6 lg:space-y-6">
-            
-            <div className="hidden lg:flex mb-2 p-2 bg-primary-600 rounded-md shadow-sm">
-              <Cpu size={20} className="text-white" />
-            </div>
-
-            <Tab className={({ selected }) =>
-              `p-3 rounded-md transition-colors outline-none ${
-                selected ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
-              }`
-            }>
-              <LayoutGrid size={20} />
-            </Tab>
-
-            <Tab className={({ selected }) =>
-              `p-3 rounded-md transition-colors outline-none ${
-                selected ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
-              }`
-            }>
-              <TerminalIcon size={20} />
-            </Tab>
-
-            <Tab className={({ selected }) =>
-              `p-3 rounded-md transition-colors outline-none ${
-                selected ? 'bg-gray-800 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'
-              }`
-            }>
-              <FolderCode size={20} />
-            </Tab>
-
-            <div className="hidden lg:flex mt-auto pb-4">
-              <button 
-                onClick={killAllAgents}
-                className="p-3 text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
-                title="Kill All"
-              >
-                <ShieldAlert size={20} />
-              </button>
-            </div>
-             
-             {/* Mobile Kill Switch separate from Tabs */}
-             <div className="lg:hidden p-3 text-red-500" onClick={killAllAgents}>
-                <ShieldAlert size={20} />
-             </div>
-          </TabList>
-        </div>
-
         {/* MAIN CONTENT AREA */}
-        <main className="order-1 lg:order-2 flex-1 flex flex-col min-w-0 bg-gray-950">
+        <main className="order-1 flex-1 flex flex-col min-h-0 min-w-0 bg-gray-950 overflow-hidden relative">
           
           {/* HEADER */}
-          <header className="h-14 border-b border-gray-850 bg-gray-950 flex items-center px-4 gap-4 sticky top-0 z-10">
+          <header className="h-14 border-b border-gray-850 bg-gray-950 flex items-center px-4 gap-3 flex-none z-20">
             <div className="flex items-center gap-2 lg:hidden">
               <Cpu size={18} className="text-primary-500" />
             </div>
@@ -144,9 +92,9 @@ const App: React.FC = () => {
                 type="text" 
                 value={commandValue}
                 onChange={(e) => setCommandValue(e.target.value)}
-                placeholder={isOrchestrating ? "Master Agent is thinking..." : "Enter directive... e.g., 'Create a Snake game in HTML' (Ctrl+K)"}
+                placeholder={isOrchestrating ? "Master processing..." : isDesktop ? "Enter directive... (Ctrl+K)" : "Directive..."}
                 disabled={isOrchestrating}
-                className="w-full bg-gray-900 border border-gray-850 text-sm rounded-md pl-9 pr-10 py-1.5 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all placeholder-gray-600 text-gray-200"
+                className="w-full bg-gray-900 border border-gray-850 text-sm rounded-md pl-9 pr-10 py-2 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 outline-none transition-all placeholder-gray-600 text-gray-200"
               />
               <div className="absolute inset-y-0 right-3 flex items-center">
                 {isOrchestrating ? (
@@ -159,48 +107,43 @@ const App: React.FC = () => {
               </div>
             </form>
 
-            <div className="hidden lg:flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-accent-emerald animate-pulse"></div>
-              <span className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">System Online</span>
+              <span className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Live</span>
             </div>
           </header>
 
           {/* TAB PANELS */}
-          <TabPanels className="flex-1 overflow-hidden relative">
+          <TabPanels className="flex-1 overflow-hidden relative min-h-0">
             
-            {/* AGENT DASHBOARD PANEL */}
-            <TabPanel className="h-full flex flex-col lg:flex-row focus:outline-none">
+            {/* DASHBOARD PANEL */}
+            <TabPanel className="h-full flex flex-col lg:flex-row focus:outline-none overflow-hidden">
                <div className="flex-1 overflow-y-auto p-4 lg:p-6 scroll-smooth">
-                 
-                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                    {/* Network Graph */}
+                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 mb-6">
                     <div className="md:col-span-2">
                         <AgentNetworkGraph agents={activeAgents} broadcastEvent={broadcastEvent} />
                     </div>
-
-                    {/* Stats & Search */}
                     <div className="flex flex-col gap-3">
-                         <div className="p-4 bg-gray-900 border border-gray-850 rounded-lg flex-1 flex flex-col justify-center">
-                           <div className="text-gray-500 text-[10px] font-mono uppercase tracking-wider mb-2">Cluster Status</div>
-                           <div className="flex gap-4">
+                         <div className="p-4 bg-gray-900 border border-gray-850 rounded-lg flex-none md:flex-1 flex flex-col justify-center">
+                           <div className="text-gray-500 text-[10px] font-mono uppercase tracking-wider mb-2">Cluster Metrics</div>
+                           <div className="flex gap-6">
                               <div>
-                                 <span className="text-2xl font-mono text-white block">{activeAgents.length}</span>
-                                 <span className="text-xs text-gray-500">Nodes</span>
+                                 <span className="text-xl lg:text-2xl font-mono text-white block">{activeAgents.length}</span>
+                                 <span className="text-[10px] text-gray-500 uppercase">Nodes</span>
                               </div>
                               <div>
-                                 <span className="text-2xl font-mono text-white block">{artifacts.length}</span>
-                                 <span className="text-xs text-gray-500">Artifacts</span>
+                                 <span className="text-xl lg:text-2xl font-mono text-white block">{artifacts.length}</span>
+                                 <span className="text-[10px] text-gray-500 uppercase">Artifacts</span>
                               </div>
                            </div>
                          </div>
-                         
                          <div className="relative">
                             <Search size={14} className="absolute left-3 top-3 text-gray-500" />
                             <input 
                               type="text" 
                               value={searchQuery}
                               onChange={(e) => setSearchQuery(e.target.value)}
-                              placeholder="Filter agents..." 
+                              placeholder="Search agents..." 
                               className="w-full bg-gray-900 border border-gray-850 rounded-lg pl-9 pr-3 py-2.5 text-xs focus:ring-1 focus:ring-primary-500 outline-none text-gray-200"
                             />
                          </div>
@@ -208,14 +151,14 @@ const App: React.FC = () => {
                  </div>
 
                  {activeAgents.length === 0 && !isOrchestrating && (
-                    <div className="flex flex-col items-center justify-center h-64 text-gray-600 border border-dashed border-gray-850 rounded-lg">
-                      <Cpu size={40} className="mb-4 opacity-50" />
-                      <p className="text-sm">System Idle. Awaiting directives.</p>
+                    <div className="flex flex-col items-center justify-center h-48 lg:h-64 text-gray-600 border border-dashed border-gray-850 rounded-lg">
+                      <Cpu size={32} className="mb-4 opacity-30" />
+                      <p className="text-xs font-mono uppercase tracking-widest">Awaiting neural commands</p>
                     </div>
                  )}
 
-                 {/* Agent Grid */}
-                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+                 {/* Agent Grid - Substantial bottom padding to clear the navigation bar on mobile */}
+                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-24 lg:pb-8">
                     {filteredAgents.map(agent => (
                       <AgentCard 
                         key={agent.id} 
@@ -227,35 +170,74 @@ const App: React.FC = () => {
                     ))}
                  </div>
                </div>
-
-               {/* Split view terminal on large screens */}
+               
                <div className="hidden lg:flex w-96 border-l border-gray-850 bg-gray-950 flex-col">
-                  <Terminal 
-                    logs={displayedLogs} 
-                    isMobile={false} 
-                    isOpen={true} 
-                    onClose={() => {}} 
-                  />
+                  <Terminal logs={displayedLogs} isMobile={false} isOpen={true} onClose={() => {}} />
                </div>
             </TabPanel>
 
-            {/* FULL TERMINAL PANEL (Mobile/Focus) */}
-            <TabPanel className="h-full bg-gray-950 focus:outline-none relative">
-                <Terminal 
-                  logs={globalLogs} 
-                  isMobile={!isDesktop} 
-                  isOpen={true} 
-                  onClose={() => {}} 
-                />
+            {/* LOGS PANEL */}
+            <TabPanel className="h-full bg-gray-950 focus:outline-none relative overflow-hidden">
+                <Terminal logs={globalLogs} isMobile={true} isOpen={true} onClose={() => {}} />
             </TabPanel>
 
-            {/* ARTIFACT EXPLORER PANEL */}
-            <TabPanel className="h-full bg-gray-950 focus:outline-none relative">
+            {/* CODE PANEL */}
+            <TabPanel className="h-full bg-gray-950 focus:outline-none relative overflow-hidden">
                <ArtifactExplorer artifacts={artifacts} onUpdateArtifact={updateArtifact} />
             </TabPanel>
-
           </TabPanels>
         </main>
+
+        {/* 1PX INVISIBLE SPACER (Separator) */}
+        <div className="order-2 h-[1px] w-full bg-gray-850/20 flex-none lg:hidden"></div>
+
+        {/* BOTTOM NAVIGATION */}
+        <div className="order-3 lg:order-1 flex-none z-30 bg-gray-900/98 backdrop-blur-xl lg:border-r border-gray-850 shadow-2xl safe-pb">
+          <TabList className="flex lg:flex-col h-14 lg:h-full w-full lg:w-16 items-center justify-around lg:justify-start lg:py-8 lg:space-y-8">
+            
+            <div className="hidden lg:flex mb-2 p-2 bg-primary-600 rounded-md shadow-lg">
+              <Cpu size={20} className="text-white" />
+            </div>
+
+            <Tab className={({ selected }) =>
+              `flex flex-col items-center justify-center gap-1 px-3 py-2 lg:p-3 lg:rounded-md transition-all outline-none flex-1 lg:flex-none ${
+                selected ? 'text-primary-400 bg-gray-800 lg:text-white lg:shadow-md' : 'text-gray-500 hover:text-gray-300'
+              }`
+            }>
+              <LayoutGrid size={22} />
+              <span className="text-[9px] lg:hidden font-bold uppercase tracking-tighter">Nodes</span>
+            </Tab>
+
+            <Tab className={({ selected }) =>
+              `flex flex-col items-center justify-center gap-1 px-3 py-2 lg:p-3 lg:rounded-md transition-all outline-none flex-1 lg:flex-none ${
+                selected ? 'text-primary-400 bg-gray-800 lg:text-white lg:shadow-md' : 'text-gray-500 hover:text-gray-300'
+              }`
+            }>
+              <TerminalIcon size={22} />
+              <span className="text-[9px] lg:hidden font-bold uppercase tracking-tighter">Logs</span>
+            </Tab>
+
+            <Tab className={({ selected }) =>
+              `flex flex-col items-center justify-center gap-1 px-3 py-2 lg:p-3 lg:rounded-md transition-all outline-none flex-1 lg:flex-none ${
+                selected ? 'text-primary-400 bg-gray-800 lg:text-white lg:shadow-md' : 'text-gray-500 hover:text-gray-300'
+              }`
+            }>
+              <FolderCode size={22} />
+              <span className="text-[9px] lg:hidden font-bold uppercase tracking-tighter">Files</span>
+            </Tab>
+
+            <div className="flex-1 lg:flex-none flex items-center justify-center">
+              <button 
+                onClick={killAllAgents}
+                className="flex flex-col items-center justify-center gap-1 px-3 py-2 text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
+                title="Kill All"
+              >
+                <ShieldAlert size={22} />
+                <span className="text-[9px] lg:hidden font-bold uppercase tracking-tighter">Reset</span>
+              </button>
+            </div>
+          </TabList>
+        </div>
       </TabGroup>
     </div>
   );
